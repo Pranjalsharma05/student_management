@@ -1,10 +1,49 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 from datetime import date
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+
+# Assignment Model
+class Assignment(models.Model):
+    title = models.CharField(max_length=255, help_text="Enter the title of the assignment.")
+    description = models.TextField()
+    due_date = models.DateField()
+    class_group = models.ForeignKey('ClassGroup', on_delete=models.CASCADE, related_name='assignments')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        # Validate that due_date is in the future
+        if self.due_date < timezone.now().date():
+            raise ValidationError("Due date must be in the future.")
+
+    def __str__(self):
+        return self.title
+
+# Submission Model
+class Submission(models.Model):
+    student = models.ForeignKey('Student', on_delete=models.CASCADE, related_name='submissions')
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='submissions')
+    file = models.FileField(upload_to='submissions/')
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if Submission.objects.filter(student=self.student, assignment=self.assignment).exists():
+            raise ValidationError("You have already submitted this assignment.")
+
+    def save(self, *args, **kwargs):
+        self.clean()  # Call clean to validate the submission
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.student} - {self.assignment.title}"
+
+
 
 # Department Model
 class Department(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    description = models.TextField()
     code = models.CharField(max_length=10, unique=True)  # Example: 'CSE', 'ECE'
 
     def __str__(self):
@@ -19,6 +58,7 @@ class Degree(models.Model):
 
     def __str__(self):
         return self.name
+    
 
 # Course Model
 class Course(models.Model):
@@ -36,13 +76,26 @@ class Course(models.Model):
 
 # ClassGroup Model
 class ClassGroup(models.Model):
+    name = models.CharField(max_length=100)
     degree = models.ForeignKey(Degree, on_delete=models.CASCADE, related_name='class_groups')
     enrollment_year = models.IntegerField()  # Year when the group was enrolled (e.g., 2022)
     current_year = models.IntegerField(default=1)  # 1 for 1st year, 2 for 2nd year, etc.
     class_incharge = models.ForeignKey('Teacher', on_delete=models.SET_NULL, null=True, blank=True, related_name='incharge_classes')
+    courses = models.ManyToManyField(Course, related_name='class_groups', blank=True)  # Relationship to courses
 
     def __str__(self):
         return f"{self.degree.name} - Batch {self.enrollment_year} (Year {self.current_year})"
+
+    def get_class_details(self):
+        """Returns details about the class including department, degree, in-charge, and courses."""
+        return {
+            'degree': self.degree.name,
+            'department': self.degree.department.name,
+            'class_incharge': str(self.class_incharge),
+            'courses': [course.name for course in self.courses.all()],
+            'enrollment_year': self.enrollment_year,
+            'current_year': self.current_year,
+        }
 
 # DepartmentCourse Model
 class DepartmentCourse(models.Model):
@@ -64,6 +117,12 @@ class DepartmentCourse(models.Model):
 
 # Student Model
 class Student(models.Model):
+    GENDER_CHOICES = [
+        ('M', 'Male'),
+        ('F', 'Female'),
+        ('O', 'Other'),
+    ]
+
     student_id = models.CharField(max_length=15, unique=True, editable=False)  # e.g., BT202201
     first_name = models.CharField(max_length=50)
     last_name = models.CharField(max_length=50)
@@ -75,6 +134,7 @@ class Student(models.Model):
     state = models.CharField(max_length=50)
     pin_code = models.CharField(max_length=10)
     dob = models.DateField()
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES)  # New gender field
     degree = models.ForeignKey(Degree, on_delete=models.CASCADE, related_name='students', default=1)
     class_group = models.ForeignKey(ClassGroup, on_delete=models.CASCADE)
     enrollment_year = models.IntegerField()
@@ -108,8 +168,13 @@ class Student(models.Model):
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
-# Teacher Model
 class Teacher(models.Model):
+    GENDER_CHOICES = [
+        ('M', 'Male'),
+        ('F', 'Female'),
+        ('O', 'Other'),
+    ]
+
     teacher_id = models.CharField(max_length=10, unique=True, editable=False)  # auto-generated ID
     first_name = models.CharField(max_length=50)
     last_name = models.CharField(max_length=50)
@@ -124,6 +189,7 @@ class Teacher(models.Model):
     city = models.CharField(max_length=50)
     state = models.CharField(max_length=50)
     pin_code = models.CharField(max_length=10)
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES)  # New gender field
 
     def clean(self):
         # Custom validation to ensure dob is in the past
@@ -171,22 +237,30 @@ def promote_students():
             # Promote all students in this class group
             students_in_class = Student.objects.filter(class_group=class_group)
             for student in students_in_class:
-                student.class_group = ClassGroup.objects.filter(
+                # Find the next class group for the student
+                next_class_group = ClassGroup.objects.filter(
                     degree=student.degree,
                     enrollment_year=student.enrollment_year,
                     current_year=class_group.current_year
                 ).first()
-                student.save()
+
+                if next_class_group:
+                    student.class_group = next_class_group
+                    student.save()
+                else:
+                    print(f"No next class group found for {student}.")
+
         else:
             graduate_students(class_group)
 
-# Function to handle graduating students (final year)
 def graduate_students(class_group):
     graduating_students = Student.objects.filter(class_group=class_group)
 
     for student in graduating_students:
-        student.is_graduated = True
-        student.save()
+        if not student.is_graduated:  # Check if the student is not already graduated
+            student.is_graduated = True
+            student.save()
+
 
 class CarouselImage(models.Model):
     image = models.ImageField(upload_to='carousel_images/')
@@ -194,3 +268,31 @@ class CarouselImage(models.Model):
 
     def __str__(self):
         return self.image.name
+    
+# Role Model
+class Role(models.Model):
+    role_id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=50)  # e.g., Sports In-Charge, Club In-Charge, TPO
+    description = models.TextField(null=True, blank=True)  # Optional description of the role
+
+    class Meta:
+        ordering = ['name']  # Order by name
+        verbose_name = 'Role'
+        verbose_name_plural = 'Roles'
+        
+    def __str__(self):
+        return self.name
+
+
+class RoleAssignment(models.Model):
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name='assignments')
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='role_assignments')  # Allow one teacher to have multiple roles
+    department = models.ForeignKey(Department, on_delete=models.CASCADE, related_name='role_assignments')  # Optional, depending on your use case
+
+    class Meta:
+        unique_together = ('role', 'teacher')  # Prevent assigning the same role to a teacher multiple times
+        verbose_name = 'Role Assignment'
+        verbose_name_plural = 'Role Assignments'
+
+    def __str__(self):
+        return f"{self.teacher} - {self.role}"

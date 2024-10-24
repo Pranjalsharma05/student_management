@@ -1,11 +1,9 @@
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from .models import CarouselImage
 
+from rest_framework import status
+from rest_framework import generics
 from .models import (
     Department,
     Degree,
@@ -15,8 +13,11 @@ from .models import (
     Student,
     Teacher,
     HOD,
-    CarouselImage
-)
+    CarouselImage,
+    Assignment,
+    Submission
+,
+Role,RoleAssignment)
 from .serializers import (
     DepartmentSerializer,
     DegreeSerializer,
@@ -26,7 +27,10 @@ from .serializers import (
     StudentSerializer,
     TeacherSerializer,
     HODSerializer,
-    CarouselImageSerializer
+    CarouselImageSerializer,
+    AssignmentSerializer,
+    SubmissionSerializer,
+    RoleSerializer,RoleAssignmentSerializer
 )
 
 # Department ViewSet
@@ -86,9 +90,37 @@ class StudentViewSet(viewsets.ModelViewSet):
         else:
             return Response({'message': 'No students found.'}, status=404)
 
-
-
-    
+# CarouselImage ViewSet
 class CarouselImageViewSet(viewsets.ModelViewSet):
     queryset = CarouselImage.objects.all()
-    serializer_class = CarouselImageSerializer    
+    serializer_class = CarouselImageSerializer
+
+# Assignment ViewSet
+class AssignmentViewSet(viewsets.ModelViewSet):
+    queryset = Assignment.objects.all()
+    serializer_class = AssignmentSerializer
+
+# Submission ViewSet
+class SubmissionViewSet(viewsets.ModelViewSet):
+    queryset = Submission.objects.all()
+    serializer_class = SubmissionSerializer
+
+    @action(detail=False, methods=['get'], url_path='by-assignment/(?P<assignment_id>[^/.]+)', url_name='by_assignment')
+    def by_assignment(self, request, assignment_id):
+        submissions = self.queryset.filter(assignment_id=assignment_id)
+        serializer = self.get_serializer(submissions, many=True)
+
+        if submissions:
+            return Response(serializer.data, status=200)
+        else:
+            return Response({'message': 'No submissions found for this assignment.'}, status=404)
+
+
+class RoleListCreateView(viewsets.ModelViewSet):
+    queryset = Role.objects.all()
+    serializer_class = RoleSerializer
+
+class RoleAssignmentViewSet(viewsets.ModelViewSet):
+    queryset = RoleAssignment.objects.all()
+    serializer_class = RoleAssignmentSerializer
+    

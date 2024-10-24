@@ -12,13 +12,15 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 
+
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # Use with caution; better to specify allowed origins
 
 # Uncomment to specify allowed origins
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "http://localhost:8000",
+    "http://localhost:8000", # Your frontend URL
+    "http://192.168.178.240:8000",  # Adjust as needed
 ]
 
 # Application definition
@@ -33,7 +35,14 @@ INSTALLED_APPS = [
     'students',
     'corsheaders',
     'django_filters',
+    'rest_framework_simplejwt',
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Make sure this is first
@@ -44,6 +53,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    
 ]
 
 ROOT_URLCONF = 'student_management.urls'
